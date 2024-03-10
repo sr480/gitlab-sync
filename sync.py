@@ -6,19 +6,27 @@ load_dotenv()
 # Google Sheets API credentials
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SERVICE_ACCOUNT_FILE = './google-access.json'
-SPREADSHEET_ID =os.getenv('SPREADSHEET_ID'); 
+SPREADSHEET_ID =os.getenv('SPREADSHEET_ID')
 
 # GitLab API credentials
-GITLAB_TOKEN = os.getenv('GITLAB_TOKEN');
-GITLAB_API_URL = 'https://gitlab.ugpa.ru/'
+GITLAB_TOKEN = os.getenv('GITLAB_TOKEN')
+GITLAB_API_URL = os.getenv('GITLAB_API_URL')
 
+# Truncates thw descirption to this length
 MAX_DESC_LEN = 400
+
+# Collects labels from the GitLab issue to Feature type column
 FEATURE_TYPES = set(['Epic', 'feature-request', 'bug-report', 'User-story', 'Spec'])
+
+# Collects labels from the GitLab issue to Imact level column
 IMPACT_LEVELS = set(['US::Must-have', 'US::Should-have', 'US::Could-have', 'US::Won\'t have',
                 'IM::Ultra', 'IM::High', 'IM::Medium', 'IM::Low'
                 ])
+
+# Collects labels from the GitLab issue to Confedence column
 CONFEDENCE_LEVELS = set(['CF::WellKnown', 'CF::LooksKnown', 'CF::NeedsResearch', 'CF::NoSpec'])
 
+COLUMNS_COUNT = 12
 RANGE = 'A2:L'
 
 import gspread
@@ -27,6 +35,7 @@ import gitlab
 from gitlab.v4.objects import ProjectIssue
 from google.oauth2 import service_account
 import sys
+
 
 worksheet_name = sys.argv[1] # if sys.argv else WORKSHEET
 project_name = sys.argv[2] # if sys.argv else GITLAB_PROJECT_ID
@@ -73,7 +82,7 @@ def export_issue(issue, cells):
 
 def convertToCellFormat(rows: ValueRange):
     result = []
-    columns_count = 12
+    columns_count = COLUMNS_COUNT
     for row in rows:
         result_row = [ "" ] * columns_count
 
@@ -121,9 +130,17 @@ worksheet.format('A1:A1000', {
 })
 
 sheet_iids = []
+
+# Fills table header if it's empty
+header_row = worksheet.row_values(1)
+if len(header_row) < COLUMNS_COUNT:
+    header = ['ID', 'Updated At', 'Title', 'Description', 'Feature type', 'Impact level', 'Confedence level', 'Other labels', 'Assignees', 'Author', 'State', 'Milestone']
+    worksheet.append_row(header)
+
 # Get all values from the sheet
 batch_rows = worksheet.batch_get([RANGE])[0]
 rows = convertToCellFormat(worksheet.batch_get([RANGE])[0])
+
 # Loop through each row in the sheet
 for row_index, row in enumerate(rows):    
     sheet_iid = row[0]
@@ -184,22 +201,17 @@ for row_index, row in enumerate(rows):
               count_exported += 1
 
 # Import new issues
+new_issues_start = len(rows)
 for gl_issue in issues:
     if sheet_iids.count(str(gl_issue.iid)) > 0:
         continue
-    row = [ "" ] * len(rows[0])
+    row = [ "" ] * COLUMNS_COUNT
     import_issue(gl_issue, row)
     rows.append(row)
 
-    worksheet.format('A{0}'.format(empty_row_index), {
-        "backgroundColor": {
-            "red": 0.7,
-            "green": 0.9,
-            "blue": 0.9
-        }
-    })
     empty_row_index += 1
     count_imported_new += 1
+new_issues_end = len(rows)
 
 # Update the cells in batches
 cell_list = worksheet.range(RANGE)
@@ -212,5 +224,16 @@ for i, cell in enumerate(cell_list):
     except:
         break
 worksheet.update_cells(cell_list)
+
+# Set background color for new issues
+cells_to_color = 'A{0}:A{1}'.format(new_issues_start + 2, new_issues_end + 2)
+print(cells_to_color)
+worksheet.format(cells_to_color, {
+    "backgroundColor": {
+        "red": 0.7,
+        "green": 0.9,
+        "blue": 0.9
+    }
+})
 
 print(f'Sync completed, created {count_created}, exported {count_exported}, imported {count_imported}, imported new {count_imported_new} issues')

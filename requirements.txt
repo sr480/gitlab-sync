@@ -1,0 +1,4 @@
+google-auth
+gspread
+python-gitlab
+python-dotenv
